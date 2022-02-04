@@ -271,7 +271,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
     } else if (!bt_uuid_cmp(params->uuid, &cw_uuid.uuid)) {
         struct bt_gatt_chrc *chrc = attr->user_data;
         LOG_INF("CW Characteristic discovered at handle %u", attr->handle);
-        cw_handle = chrc->handle;
+        cw_handle = chrc->value_handle;
         return BT_GATT_ITER_STOP;
     }
     return BT_GATT_ITER_STOP;
