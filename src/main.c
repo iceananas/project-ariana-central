@@ -1,37 +1,18 @@
-#include <zephyr/types.h>
-#include <stddef.h>
-#include <string.h>
-#include <errno.h>
-#include <zephyr.h>
-#include <sys/printk.h>
-#include <device.h>
-#include <logging/log.h>
-
-#include <sys/util.h>
-#include <drivers/i2c.h>
-#include <drivers/gpio.h>
-#include <drivers/spi.h>
-
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/uuid.h>
-#include <bluetooth/gatt.h>
-#include <sys/byteorder.h>
-
+#include "main.h"
 #include "ft5xx6.h"
 
 #define LOG_LEVEL 3
 LOG_MODULE_REGISTER(main);
-
-// #define MY_DEV_IRQ  24       /* device uses IRQ 24 */
-// #define MY_DEV_PRIO  2       /* device uses interrupt priority 2 */
-// #define MY_ISR_ARG  DEVICE_GET(my_device)
-// #define MY_IRQ_FLAGS 0       /* IRQ flags */
-
 #define SLEEP_TIME_MS 5
+#define RINGS_ADDRESS "C3:34:B3:E9:AD:16"
 
-/* Config for CTPM */
+// Logic variables
+static bool connection_successful = false;
+static uint8_t brightness_value = 0;
+static uint8_t ww_value = 0;
+static uint8_t cw_value = 0;
+
+// Config and functions for CTPM
 #define I2C DT_NODELABEL(i2c0)
 #define INT_PIN DT_NODELABEL(ctpmint)
 static const struct gpio_dt_spec ctpm_int = GPIO_DT_SPEC_GET(INT_PIN, gpios);
@@ -39,46 +20,27 @@ static struct gpio_callback ctpm_int_cb_data;
 static bool ctpm_event_flag = false;
 static struct point coordinates = {.x = 0, .y = 0};
 static const struct device *ctpm_dev;
-
-// Light address
-#define RINGS_ADDRESS "C3:34:B3:E9:AD:16"
-
-// BLE data structures
-static struct bt_conn *default_conn;
-static struct bt_gatt_discover_params discover_params;
-static struct bt_uuid_128 light_control_uuid =
-    BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x1d89ca61, 0x7967, 0x4bcd, 0x9fda, 0xdda8013ada2c));
-static struct bt_uuid_128 ww_uuid =
-    BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x00b12566, 0xdcb3, 0x4c4f, 0xaf5c, 0x82a20d56f2b5));
-static struct bt_uuid_128 cw_uuid =
-    BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x81a273e6, 0x5528, 0x4266, 0xa7d9, 0x05718297bc5c));
-static uint16_t ww_handle = 0;
-static uint16_t cw_handle = 0;
-
-// BLE handlers
-static void start_scan(void);
-static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
-                         struct net_buf_simple *ad);
-static void connected(struct bt_conn *conn, uint8_t err);
-static void disconnected(struct bt_conn *conn, uint8_t reason);
-static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *attr,
-                             struct bt_gatt_discover_params *params);
-
-static bool connection_successful = false;
-static uint8_t ww_value = 0;
-static uint8_t cw_value = 0;
-
-// Callbacks
-static struct bt_conn_cb conn_callbacks = {
-    .connected = connected,
-    .disconnected = disconnected,
-};
-
-void int_received(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+void on_interrupt_received(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     ww_value = coordinates.x / 2;
     cw_value = coordinates.y / 2;
     ctpm_event_flag = true;
 }
+
+// BLE functions and handlers
+static void start_scan(void);
+static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+                             struct bt_gatt_discover_params *params);
+
+static void on_device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
+                            struct net_buf_simple *ad);
+static void on_connect(struct bt_conn *conn, uint8_t err);
+static void on_disconnect(struct bt_conn *conn, uint8_t reason);
+
+// Callbacks
+static struct bt_conn_cb conn_callbacks = {
+    .connected = on_connect,
+    .disconnected = on_disconnect,
+};
 
 // Main loop
 void main(void) {
@@ -98,7 +60,7 @@ void main(void) {
 
     /* Register Callbacks */
     bt_conn_cb_register(&conn_callbacks);
-    gpio_init_callback(&ctpm_int_cb_data, int_received, BIT(ctpm_int.pin));
+    gpio_init_callback(&ctpm_int_cb_data, on_interrupt_received, BIT(ctpm_int.pin));
     gpio_add_callback(ctpm_int.port, &ctpm_int_cb_data);
     LOG_INF("Set up Interrupt at %s pin %d\n", ctpm_int.port->name, ctpm_int.pin);
 
@@ -137,7 +99,7 @@ void main(void) {
 static void start_scan(void) {
     int err;
 
-    err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, device_found);
+    err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, on_device_found);
     if (err) {
         LOG_ERR("Scanning failed to start (err %d)\n", err);
         return;
@@ -147,8 +109,8 @@ static void start_scan(void) {
 }
 
 // Handler for found devices
-static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
-                         struct net_buf_simple *ad) {
+static void on_device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
+                            struct net_buf_simple *ad) {
     char addr_str[BT_ADDR_LE_STR_LEN];
     int err;
 
@@ -180,7 +142,7 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 }
 
 // Handler after sucessful connection
-static void connected(struct bt_conn *conn, uint8_t err) {
+static void on_connect(struct bt_conn *conn, uint8_t err) {
     char addr[BT_ADDR_LE_STR_LEN];
 
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
@@ -216,7 +178,7 @@ static void connected(struct bt_conn *conn, uint8_t err) {
 }
 
 // Disconnect
-static void disconnected(struct bt_conn *conn, uint8_t reason) {
+static void on_disconnect(struct bt_conn *conn, uint8_t reason) {
     char addr[BT_ADDR_LE_STR_LEN];
 
     if (conn != default_conn) {
