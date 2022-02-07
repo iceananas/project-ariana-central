@@ -22,8 +22,8 @@ static bool ctpm_event_flag = false;
 static struct point coordinates = {.x = 0, .y = 0};
 static const struct device *ctpm_dev;
 void on_interrupt_received(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    ww_value = (coordinates.x / 2) - 5;
-    cw_value = (coordinates.y / 2) - 5;
+    ww_value = (coordinates.x / 2);
+    cw_value = (coordinates.y / 2);
     ctpm_event_flag = true;
 }
 
@@ -78,6 +78,7 @@ void main(void) {
     while (1) {
         if (ctpm_event_flag) {
             coordinates = ft_5xx6_get_coordinates(ctpm_dev);
+            LOG_DEBUG("Coordinates: x %d \t y %d", coordinates.x, coordinates.y);
 
             for (int i = 0; i < conn_count; i++) {
                 err = bt_gatt_write_without_response(bt_connection[i], ww_handle[i], &ww_value, 1,
