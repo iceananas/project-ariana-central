@@ -6,10 +6,12 @@ LOG_MODULE_REGISTER(main);
 #define SLEEP_TIME_MS 10
 const char *ring_adresses[] = {"C3:34:B3:E9:AD:16", "E9:09:A8:54:19:5C"};
 
+
 // Logic variables
 static uint8_t brightness_value = 0;
 static uint8_t ww_value = 0;
 static uint8_t cw_value = 0;
+static const int registered_rings = sizeof(ring_adresses) / sizeof(ring_adresses[0]);
 
 // Config and functions for CTPM
 #define I2C DT_NODELABEL(i2c0)
@@ -20,8 +22,8 @@ static bool ctpm_event_flag = false;
 static struct point coordinates = {.x = 0, .y = 0};
 static const struct device *ctpm_dev;
 void on_interrupt_received(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    ww_value = coordinates.x / 2;
-    cw_value = coordinates.y / 2;
+    ww_value = (coordinates.x / 2) - 5;
+    cw_value = (coordinates.y / 2) - 5;
     ctpm_event_flag = true;
 }
 
@@ -71,7 +73,7 @@ void main(void) {
     LOG_INF("FT5436 Chip Firmware ID: %d", tpcm_info.firmware_id);
 
     start_scan();
-    k_sleep(K_SECONDS(15));
+    k_sleep(K_SECONDS(5));
 
     while (1) {
         if (ctpm_event_flag) {
@@ -145,7 +147,7 @@ static void on_device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
     bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
     LOG_INF("Device found: %s (RSSI %d)", log_strdup(addr_str), rssi);
 
-    for (int i = 0; i < CONFIG_BT_MAX_CONN; i++) {
+    for (int i = 0; i < registered_rings; i++) {
         if (!strncmp(addr_str, ring_adresses[i], 17)) {
             LOG_INF("Ring found, trying to connect...");
             if (bt_le_scan_stop()) {
@@ -192,11 +194,6 @@ static void on_connect(struct bt_conn *conn, uint8_t err) {
         LOG_ERR("Discover failed(err %d)", err);
         return;
     }
-    /*
-    conn_count++;
-    if (conn_count < CONFIG_BT_MAX_CONN) {
-        start_scan();
-    }*/
 }
 
 // Disconnect handler
@@ -254,6 +251,11 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
         struct bt_gatt_chrc *chrc = attr->user_data;
         LOG_INF("CW Characteristic discovered at handle %u", attr->handle);
         cw_handle[conn_count] = chrc->value_handle;
+
+        conn_count++;
+        if (conn_count < registered_rings) {
+            start_scan();
+        }
         return BT_GATT_ITER_STOP;
     }
     return BT_GATT_ITER_STOP;
