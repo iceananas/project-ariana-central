@@ -3,15 +3,17 @@
 
 #define LOG_LEVEL 3
 LOG_MODULE_REGISTER(main);
-#define SLEEP_TIME_MS 10
+#define SLEEP_TIME_MS 20
 const char *ring_adresses[] = {"C3:34:B3:E9:AD:16", "E9:09:A8:54:19:5C"};
 
-
-// Logic variables
+// Logic variables and functions
 static uint8_t brightness_value = 0;
 static uint8_t ww_value = 0;
 static uint8_t cw_value = 0;
+static uint8_t color[2] = {0, 0};
 static const int registered_rings = sizeof(ring_adresses) / sizeof(ring_adresses[0]);
+static uint8_t calculate_brightness(int x, int y);
+static void calculate_color(int x, int y, uint8_t *color);
 
 // Config and functions for CTPM
 #define I2C DT_NODELABEL(i2c0)
@@ -22,8 +24,10 @@ static bool ctpm_event_flag = false;
 static struct point coordinates = {.x = 0, .y = 0};
 static const struct device *ctpm_dev;
 void on_interrupt_received(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    ww_value = (coordinates.x / 2);
-    cw_value = (coordinates.y / 2);
+    brightness_value = calculate_brightness(coordinates.x, coordinates.y);
+    calculate_color(coordinates.x - 255, coordinates.y - 255, color);
+    ww_value = color[0];
+    cw_value = color[1];
     ctpm_event_flag = true;
 }
 
@@ -79,6 +83,8 @@ void main(void) {
         if (ctpm_event_flag) {
             coordinates = ft_5xx6_get_coordinates(ctpm_dev);
             LOG_DBG("Coordinates: x %d \t y %d", coordinates.x, coordinates.y);
+            LOG_DBG("Brightness: %d", brightness_value);
+            LOG_DBG("White colors: WW %d, CW %d", ww_value, cw_value);
 
             for (int i = 0; i < conn_count; i++) {
                 err = bt_gatt_write_without_response(bt_connection[i], ww_handle[i], &ww_value, 1,
@@ -203,7 +209,7 @@ static void on_disconnect(struct bt_conn *conn, uint8_t reason) {
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
     LOG_ERR("Disconnected: %s (reason 0x%02x)\n", log_strdup(addr), reason);
-    sys_reboot();
+    sys_reboot(SYS_REBOOT_COLD);
 }
 
 // Discovery function
@@ -255,4 +261,46 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
         return BT_GATT_ITER_STOP;
     }
     return BT_GATT_ITER_STOP;
+}
+
+// Brightnes logic: center of touchpad = lowest, outside of touchpad = highest
+static uint8_t calculate_brightness(int x, int y) {
+    uint8_t r = 0;
+    x -= 255;
+    y -= 255;
+    r = sqrt(x * x + y * y);
+    return r;
+}
+
+// White temperature logic: Top = cold white, Bottom = warm white
+static void calculate_color(int x, int y, uint8_t *color) {
+    double theta = 0;
+
+    if (x >= 0) {
+        // First quadrant
+        if (y >= 0) {
+            theta = atan2(y, x);
+            color[0] = 255 - (255 * (theta / M_PI_2));
+            color[1] = 255;
+        }
+        // Second quadrant
+        else if (y < 0) {
+            theta = -atan2(y, x);
+            color[0] = 255;
+            color[1] = 255 - (255 * (theta / M_PI_2));
+        }
+    } else {
+        // Third quadrant
+        if (y < 0) {
+            theta = -atan2(y, -x);
+            color[0] = 255;
+            color[1] = 255 - (255 * (theta / M_PI_2));
+        }
+        // Fourth quadrant
+        else if (y >= 0) {
+            theta = atan2(y, -x);
+            color[0] = 255 - (255 * (theta / M_PI_2));
+            color[1] = 255;
+        }
+    }
 }
