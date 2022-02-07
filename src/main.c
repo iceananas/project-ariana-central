@@ -3,11 +3,10 @@
 
 #define LOG_LEVEL 3
 LOG_MODULE_REGISTER(main);
-#define SLEEP_TIME_MS 5
-#define RINGS_ADDRESS "C3:34:B3:E9:AD:16"
+#define SLEEP_TIME_MS 10
+const char *ring_adresses[] = {"C3:34:B3:E9:AD:16", "E9:09:A8:54:19:5C"};
 
 // Logic variables
-static bool connection_successful = false;
 static uint8_t brightness_value = 0;
 static uint8_t ww_value = 0;
 static uint8_t cw_value = 0;
@@ -73,21 +72,25 @@ void main(void) {
 
     start_scan();
 
-    while (!connection_successful) {
-        k_msleep(100);
+    while (conn_count < CONFIG_BT_MAX_CONN) {
+        k_sleep(K_SECONDS(1));
     }
 
     while (1) {
         if (ctpm_event_flag) {
             coordinates = ft_5xx6_get_coordinates(ctpm_dev);
 
-            err = bt_gatt_write_without_response(default_conn, ww_handle, &ww_value, 1, false);
-            if (err) {
-                LOG_ERR("Write data failed (err %d)", err);
-            }
-            err = bt_gatt_write_without_response(default_conn, cw_handle, &cw_value, 1, false);
-            if (err) {
-                LOG_ERR("Write data failed (err %d)", err);
+            for (int i = 0; i < conn_count; i++) {
+                err = bt_gatt_write_without_response(bt_connection[i], ww_handle[i],
+                                                     &ww_value, 1, false);
+                if (err) {
+                    LOG_ERR("Write data failed (err %d)", err);
+                }
+                err = bt_gatt_write_without_response(bt_connection[i], cw_handle[i],
+                                                     &cw_value, 1, false);
+                if (err) {
+                    LOG_ERR("Write data failed (err %d)", err);
+                }
             }
             ctpm_event_flag = false;
         }
@@ -98,8 +101,14 @@ void main(void) {
 // Start scan
 static void start_scan(void) {
     int err;
+    struct bt_le_scan_param scan_param = {
+        .type = BT_HCI_LE_SCAN_PASSIVE,
+        .options = BT_LE_SCAN_OPT_NONE,
+        .interval = SCAN_INTERVAL,
+        .window = SCAN_WINDOW,
+    };
 
-    err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, on_device_found);
+    err = bt_le_scan_start(&scan_param, on_device_found);
     if (err) {
         LOG_ERR("Scanning failed to start (err %d)\n", err);
         return;
@@ -113,8 +122,21 @@ static void on_device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
                             struct net_buf_simple *ad) {
     char addr_str[BT_ADDR_LE_STR_LEN];
     int err;
-
-    if (default_conn) {
+    struct bt_conn_le_create_param create_param = {
+        .options = BT_CONN_LE_OPT_NONE,
+        .interval = INIT_INTERVAL,
+        .window = INIT_WINDOW,
+        .interval_coded = 0,
+        .window_coded = 0,
+        .timeout = 0,
+    };
+    struct bt_le_conn_param conn_param = {
+        .interval_min = CONN_INTERVAL,
+        .interval_max = CONN_INTERVAL,
+        .latency = CONN_LATENCY,
+        .timeout = CONN_TIMEOUT,
+    };
+    if (bt_connection[conn_count]) {
         return;
     }
 
@@ -126,17 +148,19 @@ static void on_device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
     bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
     LOG_INF("Device found: %s (RSSI %d)", log_strdup(addr_str), rssi);
 
-    if (!strncmp(addr_str, RINGS_ADDRESS, 17)) {
-        LOG_INF("Ring found, trying to connect...");
-        if (bt_le_scan_stop()) {
-            return;
-        }
+    for (int i = 0; i < CONFIG_BT_MAX_CONN; i++) {
+        if (!strncmp(addr_str, ring_adresses[i], 17)) {
+            LOG_INF("Ring found, trying to connect...");
+            if (bt_le_scan_stop()) {
+                return;
+            }
 
-        err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN, BT_LE_CONN_PARAM_DEFAULT,
-                                &default_conn);
+            err = bt_conn_le_create(addr, &create_param, &conn_param, &bt_connection[conn_count]);
 
-        if (err) {
-            LOG_ERR("Create conn to %s failed (%u)\n", log_strdup(addr_str), err);
+            if (err) {
+                LOG_ERR("Create connection to %s failed (%u)\n", log_strdup(addr_str), err);
+                start_scan();
+            }
         }
     }
 }
@@ -150,17 +174,14 @@ static void on_connect(struct bt_conn *conn, uint8_t err) {
     if (err) {
         LOG_ERR("Failed to connect to %s (%u)", log_strdup(addr), err);
 
-        bt_conn_unref(default_conn);
-        default_conn = NULL;
+        bt_conn_unref(bt_connection[conn_count]);
+        bt_connection[conn_count] = NULL;
 
         start_scan();
         return;
     }
 
-    if (conn != default_conn) {
-        return;
-    }
-    LOG_INF("Connected: %s", log_strdup(addr));
+    LOG_INF("Connected (%u): %s", conn_count, log_strdup(addr));
 
     discover_params.uuid = &light_control_uuid.uuid;
     discover_params.func = discover_func;
@@ -168,29 +189,30 @@ static void on_connect(struct bt_conn *conn, uint8_t err) {
     discover_params.end_handle = BT_ATT_LAST_ATTTRIBUTE_HANDLE;
     discover_params.type = BT_GATT_DISCOVER_PRIMARY;
 
-    err = bt_gatt_discover(default_conn, &discover_params);
+    err = bt_gatt_discover(bt_connection[conn_count], &discover_params);
     if (err) {
         LOG_ERR("Discover failed(err %d)", err);
         return;
     }
 
-    connection_successful = true;
+    conn_count++;
+    if (conn_count < CONFIG_BT_MAX_CONN) {
+        start_scan();
+    }
 }
 
-// Disconnect
+// Disconnect handler
 static void on_disconnect(struct bt_conn *conn, uint8_t reason) {
     char addr[BT_ADDR_LE_STR_LEN];
-
-    if (conn != default_conn) {
-        return;
-    }
-
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
     LOG_ERR("Disconnected: %s (reason 0x%02x)\n", log_strdup(addr), reason);
 
-    bt_conn_unref(default_conn);
-    default_conn = NULL;
+    bt_conn_unref(conn);
+    if ((conn_count == 1U) && is_disconnecting) {
+        is_disconnecting = false;
+    }
+    conn_count--;
 }
 
 // Discovery function
@@ -221,7 +243,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
         struct bt_gatt_chrc *chrc = attr->user_data;
         LOG_INF("WW Characteristic discovered at handle %u", attr->handle);
 
-        ww_handle = chrc->value_handle;
+        ww_handle[conn_count] = chrc->value_handle;
         discover_params.uuid = &cw_uuid.uuid;
         discover_params.start_handle = chrc->value_handle;
         discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
@@ -233,7 +255,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
     } else if (!bt_uuid_cmp(params->uuid, &cw_uuid.uuid)) {
         struct bt_gatt_chrc *chrc = attr->user_data;
         LOG_INF("CW Characteristic discovered at handle %u", attr->handle);
-        cw_handle = chrc->value_handle;
+        cw_handle[conn_count] = chrc->value_handle;
         return BT_GATT_ITER_STOP;
     }
     return BT_GATT_ITER_STOP;
