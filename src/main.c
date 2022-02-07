@@ -78,7 +78,7 @@ void main(void) {
     while (1) {
         if (ctpm_event_flag) {
             coordinates = ft_5xx6_get_coordinates(ctpm_dev);
-            LOG_DEBUG("Coordinates: x %d \t y %d", coordinates.x, coordinates.y);
+            LOG_DBG("Coordinates: x %d \t y %d", coordinates.x, coordinates.y);
 
             for (int i = 0; i < conn_count; i++) {
                 err = bt_gatt_write_without_response(bt_connection[i], ww_handle[i], &ww_value, 1,
@@ -203,12 +203,7 @@ static void on_disconnect(struct bt_conn *conn, uint8_t reason) {
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
     LOG_ERR("Disconnected: %s (reason 0x%02x)\n", log_strdup(addr), reason);
-
-    bt_conn_unref(conn);
-    if ((conn_count == 1U) && is_disconnecting) {
-        is_disconnecting = false;
-    }
-    conn_count--;
+    sys_reboot();
 }
 
 // Discovery function
