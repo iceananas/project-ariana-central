@@ -46,7 +46,7 @@ struct point {
     EventFlag event;
 };
 
-typedef enum  {
+typedef enum {
     CONFIGURE = 0,
     WORK = 1,
     CALIBRATION = 2,
@@ -69,46 +69,44 @@ struct ft5xx6_info {
 };
 
 int ft5xx6_init(const struct device *i2cdev, const struct gpio_dt_spec gpiodev) {
-	/* I2C checks and initializations */
+    /* I2C checks and initializations */
     if (i2cdev == NULL) {
         printk("I2C: Device driver not found\n");
         return -1;
-    } 
+    }
 
     i2c_configure(i2cdev, I2C_SPEED_SET(I2C_SPEED_FAST));
-	
+
     /* Interrupt pin checks and initializations */
-	if (!device_is_ready(gpiodev.port)) {
-		printk("Error: CTPM Interrupt pin %s is not ready\n",
-		       gpiodev.port->name);
-		return -2;
-	}
+    if (!device_is_ready(gpiodev.port)) {
+        printk("Error: CTPM Interrupt pin %s is not ready\n", gpiodev.port->name);
+        return -2;
+    }
 
     // Configure Pins
-	int ret = gpio_pin_configure_dt (&gpiodev, GPIO_INPUT); 
-	if (ret != 0) {
-		printk("Error %d: failed to configure %s pin %d\n",
-		       ret, gpiodev.port->name, gpiodev.pin);
-		return ret;
-	}
-	
-	ret = gpio_pin_interrupt_configure_dt(&gpiodev,GPIO_INT_EDGE_TO_ACTIVE);
-	if (ret != 0) {
-		printk("Error %d: failed to configure interrupt on %s pin %d\n",
-			ret, gpiodev.port->name, gpiodev.pin);
-		return ret;
-	}
-    
+    int ret = gpio_pin_configure_dt(&gpiodev, GPIO_INPUT);
+    if (ret != 0) {
+        printk("Error %d: failed to configure %s pin %d\n", ret, gpiodev.port->name, gpiodev.pin);
+        return ret;
+    }
+
+    ret = gpio_pin_interrupt_configure_dt(&gpiodev, GPIO_INT_EDGE_TO_ACTIVE);
+    if (ret != 0) {
+        printk("Error %d: failed to configure interrupt on %s pin %d\n", ret, gpiodev.port->name,
+               gpiodev.pin);
+        return ret;
+    }
+
     return 0;
 }
 
-int ft5xx6_read_reg (const struct device *i2cdev, int data_register) {
+int ft5xx6_read_reg(const struct device *i2cdev, int data_register) {
     uint8_t data[1];
     int ret = i2c_reg_read_byte(i2cdev, FT5XX6_I2C_ADDRESS, data_register, data);
-	if (ret) {
-		printk("Error reading from Touch Panel! error code (%d)\n", ret);
-		return -1;
-	}
+    if (ret) {
+        printk("Error reading from Touch Panel! error code (%d)\n", ret);
+        return -1;
+    }
     return data[0];
 }
 
@@ -120,7 +118,7 @@ struct ft5xx6_info ft5xx6_get_info(const struct device *i2cdev) {
     info.firmware_id = ft5xx6_read_reg(i2cdev, FT5XX6_FIRMWARE_ID_REGISTER);
     // Firmware version
     int firmware_version_msb = ft5xx6_read_reg(i2cdev, FT5XX6_CHIP_ID_REGISTER);
-    int firmware_version_lsb = ft5xx6_read_reg(i2cdev, FT5XX6_CHIP_ID_REGISTER+1);
+    int firmware_version_lsb = ft5xx6_read_reg(i2cdev, FT5XX6_CHIP_ID_REGISTER + 1);
     info.firmware_version = ((uint16_t)firmware_version_msb << 8) + (uint16_t)firmware_version_lsb;
     // Power mode
     info.power_mode = ft5xx6_read_reg(i2cdev, FT5XX6_POWER_MODE_REGISTER);
@@ -140,12 +138,12 @@ struct point ft_5xx6_get_coordinates(const struct device *i2cdev) {
     struct point coords;
     uint8_t buffer[4];
     buffer[0] = ft5xx6_read_reg(i2cdev, FT5XX6_TOUCHX_STATUS_REGISTER);
-    buffer[1] = ft5xx6_read_reg(i2cdev, FT5XX6_TOUCHX_STATUS_REGISTER+1);
+    buffer[1] = ft5xx6_read_reg(i2cdev, FT5XX6_TOUCHX_STATUS_REGISTER + 1);
     buffer[2] = ft5xx6_read_reg(i2cdev, FT5XX6_TOUCHY_STATUS_REGISTER);
-    buffer[3] = ft5xx6_read_reg(i2cdev, FT5XX6_TOUCHY_STATUS_REGISTER+1);
+    buffer[3] = ft5xx6_read_reg(i2cdev, FT5XX6_TOUCHY_STATUS_REGISTER + 1);
 
-    coords.x = (((uint16_t)buffer[0]&0b00001111)<<8) | (uint16_t)buffer[1];
-    coords.y = (((uint16_t)buffer[2]&0b00001111)<<8) | (uint16_t)buffer[3];
+    coords.x = (((uint16_t)buffer[0] & 0b00001111) << 8) | (uint16_t)buffer[1];
+    coords.y = (((uint16_t)buffer[2] & 0b00001111) << 8) | (uint16_t)buffer[3];
     coords.event = 2;
 
     return coords;
