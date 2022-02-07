@@ -42,3 +42,6 @@ static struct bt_uuid_128 cw_uuid =
     BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x81a273e6, 0x5528, 0x4266, 0xa7d9, 0x05718297bc5c));
 static uint16_t ww_handle[CONFIG_BT_MAX_CONN];
 static uint16_t cw_handle[CONFIG_BT_MAX_CONN];
+
+// Helper variables
+static bool discover_completed = false;

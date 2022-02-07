@@ -71,23 +71,20 @@ void main(void) {
     LOG_INF("FT5436 Chip Firmware ID: %d", tpcm_info.firmware_id);
 
     start_scan();
-
-    while (conn_count < CONFIG_BT_MAX_CONN) {
-        k_sleep(K_SECONDS(1));
-    }
+    k_sleep(K_SECONDS(15));
 
     while (1) {
         if (ctpm_event_flag) {
             coordinates = ft_5xx6_get_coordinates(ctpm_dev);
 
             for (int i = 0; i < conn_count; i++) {
-                err = bt_gatt_write_without_response(bt_connection[i], ww_handle[i],
-                                                     &ww_value, 1, false);
+                err = bt_gatt_write_without_response(bt_connection[i], ww_handle[i], &ww_value, 1,
+                                                     false);
                 if (err) {
                     LOG_ERR("Write data failed (err %d)", err);
                 }
-                err = bt_gatt_write_without_response(bt_connection[i], cw_handle[i],
-                                                     &cw_value, 1, false);
+                err = bt_gatt_write_without_response(bt_connection[i], cw_handle[i], &cw_value, 1,
+                                                     false);
                 if (err) {
                     LOG_ERR("Write data failed (err %d)", err);
                 }
@@ -189,16 +186,17 @@ static void on_connect(struct bt_conn *conn, uint8_t err) {
     discover_params.end_handle = BT_ATT_LAST_ATTTRIBUTE_HANDLE;
     discover_params.type = BT_GATT_DISCOVER_PRIMARY;
 
+    discover_completed = false;
     err = bt_gatt_discover(bt_connection[conn_count], &discover_params);
     if (err) {
         LOG_ERR("Discover failed(err %d)", err);
         return;
     }
-
+    /*
     conn_count++;
     if (conn_count < CONFIG_BT_MAX_CONN) {
         start_scan();
-    }
+    }*/
 }
 
 // Disconnect handler
