@@ -26,8 +26,8 @@ static const struct device *ctpm_dev;
 void on_interrupt_received(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     brightness_value = calculate_brightness(coordinates.x, coordinates.y);
     calculate_color(coordinates.x - 255, coordinates.y - 255, color);
-    ww_value = color[0];
-    cw_value = color[1];
+    ww_value = color[0] * ((float)brightness_value / 255);
+    cw_value = color[1] * ((float)brightness_value / 255);
     ctpm_event_flag = true;
 }
 
