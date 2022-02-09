@@ -17,6 +17,10 @@
 				label = "CTPM Interrupt Pin";
 		};
 	};
+
+	aliases {
+		led-strip = &led_strip;
+	};
 };
 
 &i2c0 {
