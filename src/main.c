@@ -6,6 +6,12 @@ LOG_MODULE_REGISTER(main);
 #define SLEEP_TIME_MS 20
 const char *ring_adresses[] = {"C3:34:B3:E9:AD:16", "E9:09:A8:54:19:5C"};
 
+// Pixels
+#define STRIP_NODE DT_ALIAS(led_strip)
+#define STRIP_NUM_PIXELS DT_PROP(DT_ALIAS(led_strip), chain_length)
+static const struct device *strip = DEVICE_DT_GET(STRIP_NODE);
+struct led_rgb pixels[STRIP_NUM_PIXELS];
+
 // Logic variables and functions
 static uint8_t brightness_value = 0;
 static uint8_t ww_value = 0;
@@ -50,6 +56,13 @@ static struct bt_conn_cb conn_callbacks = {
 // Main loop
 void main(void) {
     int err;
+
+    if (device_is_ready(strip)) {
+        LOG_INF("Found LED strip device %s", strip->name);
+    } else {
+        LOG_ERR("LED strip device %s is not ready", strip->name);
+        return;
+    }
 
     /* Initialize BLE */
     err = bt_enable(NULL);

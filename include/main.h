@@ -8,12 +8,14 @@
 #include <device.h>
 #include <logging/log.h>
 #include <math.h>
+#include <device.h>
 
 #include <sys/util.h>
 #include <sys/reboot.h>
 #include <drivers/i2c.h>
 #include <drivers/gpio.h>
 #include <drivers/spi.h>
+#include <drivers/led_strip.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
@@ -30,7 +32,7 @@
 #define CONN_LATENCY 0
 #define CONN_TIMEOUT MIN(MAX((CONN_INTERVAL * 125 * MAX(CONFIG_BT_MAX_CONN, 6) / 1000), 10), 3200)
 
-#define M_PI_2		1.57079632679489661923
+#define M_PI_2 1.57079632679489661923
 
 // BLE data structures
 static struct bt_conn *bt_connection[CONFIG_BT_MAX_CONN];
