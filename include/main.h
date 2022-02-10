@@ -9,6 +9,7 @@
 #include <logging/log.h>
 #include <math.h>
 #include <device.h>
+#include <stdlib.h>
 
 #include <sys/util.h>
 #include <sys/reboot.h>
@@ -48,6 +49,17 @@ static struct bt_uuid_128 cw_uuid =
     BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x81a273e6, 0x5528, 0x4266, 0xa7d9, 0x05718297bc5c));
 static uint16_t ww_handle[CONFIG_BT_MAX_CONN];
 static uint16_t cw_handle[CONFIG_BT_MAX_CONN];
+
+// LED data structures
+
+// Pixels
+#define STRIP_NODE DT_ALIAS(led_strip)
+#define STRIP_NUM_PIXELS DT_PROP(DT_ALIAS(led_strip), chain_length)
+static const struct device *strip = DEVICE_DT_GET(STRIP_NODE);
+struct led_rgb pixels[STRIP_NUM_PIXELS];
+
+#define RGB(_r, _g, _b)                                                                            \
+    { .r = (_r), .g = (_g), .b = (_b) }
 
 // Helper variables
 static bool discover_completed = false;

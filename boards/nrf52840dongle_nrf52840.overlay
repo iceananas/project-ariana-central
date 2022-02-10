@@ -43,7 +43,7 @@
 		reg = <0>; /* ignored, but necessary for SPI bindings */
 		spi-max-frequency = <SPI_FREQ>;
 		
-		chain-length = <10>;
+		chain-length = <64>;
 		color-mapping = <LED_COLOR_ID_GREEN LED_COLOR_ID_RED LED_COLOR_ID_BLUE>;
 		spi-one-frame = <ONE_FRAME>;
 		spi-zero-frame = <ZERO_FRAME>;
