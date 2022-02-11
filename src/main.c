@@ -48,9 +48,31 @@ static struct bt_conn_cb conn_callbacks = {
 };
 
 // LED Animation functions
-static void fadeToBlack(int ledNo, int fadeValue);
-static void meteorRain(int red, int green, int blue, int meteorSize, int meteorTrailDecay,
-                       bool meteorRandomDecay);
+void fadeToBlack(int ledNo, double fadeValue);
+void meteorRain(struct led_rgb meteorColor, int meteorSize);
+struct led_rgb meteor_color = RGB(0x90, 0xa0, 0xc0);
+void animationLoop0() {
+    while (1) {
+        meteorRain(meteor_color, 1);
+    }
+}
+void animationLoop1() {
+    while (1) {
+        for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+            for (int j = 0; j < STRIP_NUM_PIXELS; j++) {
+                if (rand() % 2) {
+                    if (rand() % 2) {
+                        fadeToBlack(j, 8);
+                    }
+                }
+            }
+            led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+            k_msleep(20);
+        }
+    }
+}
+K_THREAD_DEFINE(animation0, 2048, animationLoop0, NULL, NULL, NULL, 7, 0, 0);
+K_THREAD_DEFINE(animation1, 2048, animationLoop1, NULL, NULL, NULL, 7, 0, 0);
 
 // Main loop
 void main(void) {
@@ -92,8 +114,6 @@ void main(void) {
     k_sleep(K_SECONDS(5));
 
     while (1) {
-        meteorRain(0x30, 0x60, 0x60, 3, 48, true);
-       
         if (ctpm_event_flag) {
             coordinates = ft_5xx6_get_coordinates(ctpm_dev);
             LOG_DBG("Coordinates: x %d \t y %d", coordinates.x, coordinates.y);
@@ -319,40 +339,33 @@ static void calculate_color(int x, int y, uint8_t *color) {
     }
 }
 
-static void fadeToBlack(int ledNo, int fadeValue) {
+// Fade out
+void fadeToBlack(int ledNo, double fadeValue) {
     struct led_rgb oldColor = pixels[ledNo];
     uint8_t r, g, b;
 
     r = oldColor.r;
     g = oldColor.g;
     b = oldColor.b;
-    oldColor.r = (r <= 8) ? 0 : (int)r - (r * fadeValue / 256);
-    oldColor.g = (g <= 8) ? 0 : (int)g - (g * fadeValue / 256);
-    oldColor.b = (b <= 8) ? 0 : (int)b - (b * fadeValue / 256);
+
+    oldColor.r = (r <= 10) ? 0 : (int)r - (int)ceil(((double)r * fadeValue / 256));
+    oldColor.g = (g <= 10) ? 0 : (int)g - (int)ceil(((double)g * fadeValue / 256));
+    oldColor.b = (b <= 10) ? 0 : (int)b - (int)ceil(((double)b * fadeValue / 256));
 
     memcpy(&pixels[ledNo], &oldColor, sizeof(struct led_rgb));
 }
 
-static void meteorRain(int red, int green, int blue, int meteorSize, int meteorTrailDecay,
-                       bool meteorRandomDecay) {
+// Draw meteor
+void meteorRain(struct led_rgb meteorColor, int meteorSize) {
     memset(&pixels, 0x00, sizeof(pixels));
 
-    for (int i = 0; i < STRIP_NUM_PIXELS + STRIP_NUM_PIXELS; i++) {
-        // fade brightness all LEDs one step
-        for (int j = 0; j < STRIP_NUM_PIXELS; j++) {
-            if ((!meteorRandomDecay) || (rand()%2)) {
-                fadeToBlack(j, meteorTrailDecay);
-            }
-        }
-        // draw meteor
+    for (int i = 0; i < STRIP_NUM_PIXELS + STRIP_NUM_PIXELS / 2; i++) {
         for (int j = 0; j < meteorSize; j++) {
             if ((i - j < STRIP_NUM_PIXELS) && (i - j >= 0)) {
-                struct led_rgb meteorColor = RGB(red, green, blue);
                 memcpy(&pixels[i - j], &meteorColor, sizeof(struct led_rgb));
             }
         }
-        
         led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
-        k_msleep(50);
+        k_msleep(1200);
     }
 }

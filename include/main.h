@@ -58,8 +58,7 @@ static uint16_t cw_handle[CONFIG_BT_MAX_CONN];
 static const struct device *strip = DEVICE_DT_GET(STRIP_NODE);
 struct led_rgb pixels[STRIP_NUM_PIXELS];
 
-#define RGB(_r, _g, _b)                                                                            \
-    { .r = (_r), .g = (_g), .b = (_b) }
+#define RGB(_r, _g, _b) { .r = (_r), .g = (_g), .b = (_b) }
 
 // Helper variables
 static bool discover_completed = false;
