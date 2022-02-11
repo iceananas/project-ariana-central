@@ -1,3 +1,6 @@
+#include "../nrf-bindings.h"
+#include <dt-bindings/led/led.h>
+
 &qspi {
 	status = "disabled";
 };
@@ -14,6 +17,10 @@
 				label = "CTPM Interrupt Pin";
 		};
 	};
+
+	aliases {
+		led-strip = &led_strip;
+	};
 };
 
 &i2c0 {
@@ -21,4 +28,24 @@
 	status = "okay";
 	sda-pin = <15>;
 	scl-pin = <13>;
+};
+
+&spi1 { /* LED data pin uses mosi */
+	compatible = "nordic,nrf-spim";
+	status = "okay";
+	mosi-pin = <42>;
+	miso-pin = <28>;
+	sck-pin = <27>;
+	led_strip: ws2812@0 {
+		compatible = "worldsemi,ws2812-spi";
+		label = "WS2812";
+
+		reg = <0>; /* ignored, but necessary for SPI bindings */
+		spi-max-frequency = <SPI_FREQ>;
+		
+		chain-length = <24>;
+		color-mapping = <LED_COLOR_ID_GREEN LED_COLOR_ID_RED LED_COLOR_ID_BLUE>;
+		spi-one-frame = <ONE_FRAME>;
+		spi-zero-frame = <ZERO_FRAME>;
+	};
 };

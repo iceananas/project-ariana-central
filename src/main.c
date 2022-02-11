@@ -47,9 +47,43 @@ static struct bt_conn_cb conn_callbacks = {
     .disconnected = on_disconnect,
 };
 
+// LED Animation functions
+void fadeToBlack(int ledNo, double fadeValue);
+void meteorRain(struct led_rgb meteorColor, int meteorSize);
+struct led_rgb meteor_color = RGB(0x90, 0xa0, 0xc0);
+void animationLoop0() {
+    while (1) {
+        meteorRain(meteor_color, 1);
+    }
+}
+void animationLoop1() {
+    while (1) {
+        for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
+            for (int j = 0; j < STRIP_NUM_PIXELS; j++) {
+                if (rand() % 2) {
+                    if (rand() % 2) {
+                        fadeToBlack(j, 8);
+                    }
+                }
+            }
+            led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+            k_msleep(20);
+        }
+    }
+}
+K_THREAD_DEFINE(animation0, 2048, animationLoop0, NULL, NULL, NULL, 7, 0, 0);
+K_THREAD_DEFINE(animation1, 2048, animationLoop1, NULL, NULL, NULL, 7, 0, 0);
+
 // Main loop
 void main(void) {
     int err;
+
+    if (device_is_ready(strip)) {
+        LOG_INF("Found LED strip device %s", strip->name);
+    } else {
+        LOG_ERR("LED strip device %s is not ready", strip->name);
+        return;
+    }
 
     /* Initialize BLE */
     err = bt_enable(NULL);
@@ -302,5 +336,36 @@ static void calculate_color(int x, int y, uint8_t *color) {
             color[0] = 255 - (255 * (theta / M_PI_2));
             color[1] = 255;
         }
+    }
+}
+
+// Fade out
+void fadeToBlack(int ledNo, double fadeValue) {
+    struct led_rgb oldColor = pixels[ledNo];
+    uint8_t r, g, b;
+
+    r = oldColor.r;
+    g = oldColor.g;
+    b = oldColor.b;
+
+    oldColor.r = (r <= 10) ? 0 : (int)r - (int)ceil(((double)r * fadeValue / 256));
+    oldColor.g = (g <= 10) ? 0 : (int)g - (int)ceil(((double)g * fadeValue / 256));
+    oldColor.b = (b <= 10) ? 0 : (int)b - (int)ceil(((double)b * fadeValue / 256));
+
+    memcpy(&pixels[ledNo], &oldColor, sizeof(struct led_rgb));
+}
+
+// Draw meteor
+void meteorRain(struct led_rgb meteorColor, int meteorSize) {
+    memset(&pixels, 0x00, sizeof(pixels));
+
+    for (int i = 0; i < STRIP_NUM_PIXELS + STRIP_NUM_PIXELS / 2; i++) {
+        for (int j = 0; j < meteorSize; j++) {
+            if ((i - j < STRIP_NUM_PIXELS) && (i - j >= 0)) {
+                memcpy(&pixels[i - j], &meteorColor, sizeof(struct led_rgb));
+            }
+        }
+        led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+        k_msleep(1200);
     }
 }
