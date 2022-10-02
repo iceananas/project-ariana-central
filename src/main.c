@@ -3,7 +3,7 @@
 
 #define LOG_LEVEL 3
 LOG_MODULE_REGISTER(main);
-#define SLEEP_TIME_MS 20
+#define SLEEP_TIME_MS 10
 
 // Logic variables and functions
 static uint8_t brightness_value = 0;
@@ -22,22 +22,20 @@ static bool ctpm_event_flag = false;
 static struct point coordinates = {.x = 0, .y = 0};
 static const struct device *ctpm_dev;
 void on_interrupt_received(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    brightness_value = calculate_brightness(coordinates.x, coordinates.y);
-    calculate_color(coordinates.x - 255, coordinates.y - 255, color);
-    ww_value = color[0] * ((float)brightness_value / 255);
-    cw_value = color[1] * ((float)brightness_value / 255);
     ctpm_event_flag = true;
 }
 
 // LED Animation functions
 void fadeToBlack(int ledNo, double fadeValue);
 void meteorRain(struct led_rgb meteorColor, int meteorSize);
-struct led_rgb meteor_color = RGB(0x90, 0xa0, 0xc0);
+struct led_rgb meteor_color = RGB(0x70, 0x80, 0xa0);
+
 void animationLoop0() {
     while (1) {
         meteorRain(meteor_color, 1);
     }
 }
+
 void animationLoop1() {
     while (1) {
         for (int i = 0; i < STRIP_NUM_PIXELS; i++) {
@@ -53,8 +51,9 @@ void animationLoop1() {
         }
     }
 }
-K_THREAD_DEFINE(animation0, 2048, animationLoop0, NULL, NULL, NULL, 7, 0, 0);
-K_THREAD_DEFINE(animation1, 2048, animationLoop1, NULL, NULL, NULL, 7, 0, 0);
+
+K_THREAD_DEFINE(animation0, 2048, animationLoop0, NULL, NULL, NULL, 8, 0, 0);
+K_THREAD_DEFINE(animation1, 2048, animationLoop1, NULL, NULL, NULL, 9, 0, 0);
 
 // BLE advertising data
 uint8_t ww_data[] = {0x68, 0x68, 0x09};
@@ -101,7 +100,7 @@ void main(void) {
 
     k_sleep(K_SECONDS(5));
 
-    err = bt_le_adv_start(BT_LE_ADV_NCONN, ad, ARRAY_SIZE(ad), NULL, 0);
+    err = bt_le_adv_start(BT_LE_ADV_NCONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
 
     if (err) {
         printk("Advertising failed to start (err %d)\n", err);
@@ -111,26 +110,31 @@ void main(void) {
     while (1) {
         if (ctpm_event_flag) {
             coordinates = ft_5xx6_get_coordinates(ctpm_dev);
+            brightness_value = calculate_brightness(coordinates.x, coordinates.y);
+            calculate_color(coordinates.x - 255, coordinates.y - 255, color);
+            ww_value = color[0] * ((float)brightness_value / 255);
+            cw_value = color[1] * ((float)brightness_value / 255);
+
+            if (ww_value < 30) {
+                ww_value = 10;
+            }
+            if (cw_value < 30) {
+                cw_value = 5;
+            }
             LOG_DBG("Coordinates: x %d \t y %d", coordinates.x, coordinates.y);
             LOG_DBG("Brightness: %d", brightness_value);
             LOG_DBG("White colors: WW %d, CW %d", ww_value, cw_value);
 
             ctpm_event_flag = false;
 
-            err = bt_le_adv_stop();
-            if (err) {
-                printk("Advertising failed to stop (err %d)\n", err);
-                return;
-            }
-
             ww_data[2] = ww_value;
             cw_data[2] = cw_value;
+        }
 
-            err = bt_le_adv_start(BT_LE_ADV_NCONN, ad, ARRAY_SIZE(ad), NULL, 0);
-            if (err) {
-                printk("Advertising failed to start (err %d)\n", err);
-                return;
-            }
+        err = bt_le_adv_update_data(ad, ARRAY_SIZE(ad), NULL, 0);
+        if (err) {
+            printk("Advertising failed to update (err %d)\n", err);
+            return;
         }
         k_msleep(SLEEP_TIME_MS);
     }
