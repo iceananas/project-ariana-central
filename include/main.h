@@ -35,23 +35,6 @@
 
 #define M_PI_2 1.57079632679489661923
 
-// BLE data structures
-static struct bt_conn *bt_connection[CONFIG_BT_MAX_CONN];
-static uint8_t volatile conn_count = 0;
-static bool volatile is_disconnecting;
-
-static struct bt_gatt_discover_params discover_params;
-static struct bt_uuid_128 light_control_uuid =
-    BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x1d89ca61, 0x7967, 0x4bcd, 0x9fda, 0xdda8013ada2c));
-static struct bt_uuid_128 ww_uuid =
-    BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x00b12566, 0xdcb3, 0x4c4f, 0xaf5c, 0x82a20d56f2b5));
-static struct bt_uuid_128 cw_uuid =
-    BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x81a273e6, 0x5528, 0x4266, 0xa7d9, 0x05718297bc5c));
-static uint16_t ww_handle[CONFIG_BT_MAX_CONN];
-static uint16_t cw_handle[CONFIG_BT_MAX_CONN];
-
-// LED data structures
-
 // Pixels
 #define STRIP_NODE DT_ALIAS(led_strip)
 #define STRIP_NUM_PIXELS DT_PROP(DT_ALIAS(led_strip), chain_length)
@@ -59,6 +42,3 @@ static const struct device *strip = DEVICE_DT_GET(STRIP_NODE);
 struct led_rgb pixels[STRIP_NUM_PIXELS];
 
 #define RGB(_r, _g, _b) { .r = (_r), .g = (_g), .b = (_b) }
-
-// Helper variables
-static bool discover_completed = false;

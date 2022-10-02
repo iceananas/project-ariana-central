@@ -4,14 +4,12 @@
 #define LOG_LEVEL 3
 LOG_MODULE_REGISTER(main);
 #define SLEEP_TIME_MS 20
-const char *ring_adresses[] = {"C3:34:B3:E9:AD:16", "E9:09:A8:54:19:5C"};
 
 // Logic variables and functions
 static uint8_t brightness_value = 0;
 static uint8_t ww_value = 0;
 static uint8_t cw_value = 0;
 static uint8_t color[2] = {0, 0};
-static const int registered_rings = sizeof(ring_adresses) / sizeof(ring_adresses[0]);
 static uint8_t calculate_brightness(int x, int y);
 static void calculate_color(int x, int y, uint8_t *color);
 
@@ -30,22 +28,6 @@ void on_interrupt_received(const struct device *dev, struct gpio_callback *cb, u
     cw_value = color[1] * ((float)brightness_value / 255);
     ctpm_event_flag = true;
 }
-
-// BLE functions and handlers
-static void start_scan(void);
-static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *attr,
-                             struct bt_gatt_discover_params *params);
-
-static void on_device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
-                            struct net_buf_simple *ad);
-static void on_connect(struct bt_conn *conn, uint8_t err);
-static void on_disconnect(struct bt_conn *conn, uint8_t reason);
-
-// Callbacks
-static struct bt_conn_cb conn_callbacks = {
-    .connected = on_connect,
-    .disconnected = on_disconnect,
-};
 
 // LED Animation functions
 void fadeToBlack(int ledNo, double fadeValue);
@@ -74,6 +56,14 @@ void animationLoop1() {
 K_THREAD_DEFINE(animation0, 2048, animationLoop0, NULL, NULL, NULL, 7, 0, 0);
 K_THREAD_DEFINE(animation1, 2048, animationLoop1, NULL, NULL, NULL, 7, 0, 0);
 
+// BLE advertising data
+uint8_t ww_data[] = {0x68, 0x68, 0x09};
+uint8_t cw_data[] = {0x69, 0x69, 0x05};
+static const struct bt_data ad[] = {
+    BT_DATA(BT_DATA_SVC_DATA16, ww_data, 3),
+    BT_DATA(BT_DATA_SVC_DATA16, cw_data, 3),
+};
+
 // Main loop
 void main(void) {
     int err;
@@ -98,7 +88,6 @@ void main(void) {
     ft5xx6_init(ctpm_dev, ctpm_int);
 
     /* Register Callbacks */
-    bt_conn_cb_register(&conn_callbacks);
     gpio_init_callback(&ctpm_int_cb_data, on_interrupt_received, BIT(ctpm_int.pin));
     gpio_add_callback(ctpm_int.port, &ctpm_int_cb_data);
     LOG_INF("Set up Interrupt at %s pin %d\n", ctpm_int.port->name, ctpm_int.pin);
@@ -110,8 +99,14 @@ void main(void) {
     LOG_INF("FT5436 Chip Run State: %d", tpcm_info.run_state);
     LOG_INF("FT5436 Chip Firmware ID: %d", tpcm_info.firmware_id);
 
-    start_scan();
     k_sleep(K_SECONDS(5));
+
+    err = bt_le_adv_start(BT_LE_ADV_NCONN, ad, ARRAY_SIZE(ad), NULL, 0);
+
+    if (err) {
+        printk("Advertising failed to start (err %d)\n", err);
+        return;
+    }
 
     while (1) {
         if (ctpm_event_flag) {
@@ -120,181 +115,25 @@ void main(void) {
             LOG_DBG("Brightness: %d", brightness_value);
             LOG_DBG("White colors: WW %d, CW %d", ww_value, cw_value);
 
-            for (int i = 0; i < conn_count; i++) {
-                err = bt_gatt_write_without_response(bt_connection[i], ww_handle[i], &ww_value, 1,
-                                                     false);
-                if (err) {
-                    LOG_ERR("Write data failed (err %d)", err);
-                }
-                err = bt_gatt_write_without_response(bt_connection[i], cw_handle[i], &cw_value, 1,
-                                                     false);
-                if (err) {
-                    LOG_ERR("Write data failed (err %d)", err);
-                }
-            }
             ctpm_event_flag = false;
-        }
-        k_msleep(SLEEP_TIME_MS);
-    }
-}
 
-// Start scan
-static void start_scan(void) {
-    int err;
-    struct bt_le_scan_param scan_param = {
-        .type = BT_HCI_LE_SCAN_PASSIVE,
-        .options = BT_LE_SCAN_OPT_NONE,
-        .interval = SCAN_INTERVAL,
-        .window = SCAN_WINDOW,
-    };
-
-    err = bt_le_scan_start(&scan_param, on_device_found);
-    if (err) {
-        LOG_ERR("Scanning failed to start (err %d)\n", err);
-        return;
-    }
-
-    LOG_INF("Scanning successfully started");
-}
-
-// Handler for found devices
-static void on_device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
-                            struct net_buf_simple *ad) {
-    char addr_str[BT_ADDR_LE_STR_LEN];
-    int err;
-    struct bt_conn_le_create_param create_param = {
-        .options = BT_CONN_LE_OPT_NONE,
-        .interval = INIT_INTERVAL,
-        .window = INIT_WINDOW,
-        .interval_coded = 0,
-        .window_coded = 0,
-        .timeout = 0,
-    };
-    struct bt_le_conn_param conn_param = {
-        .interval_min = CONN_INTERVAL,
-        .interval_max = CONN_INTERVAL,
-        .latency = CONN_LATENCY,
-        .timeout = CONN_TIMEOUT,
-    };
-    if (bt_connection[conn_count]) {
-        return;
-    }
-
-    /* We're only interested in connectable events */
-    if (type != BT_GAP_ADV_TYPE_ADV_IND && type != BT_GAP_ADV_TYPE_ADV_DIRECT_IND) {
-        return;
-    }
-
-    bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-    LOG_INF("Device found: %s (RSSI %d)", log_strdup(addr_str), rssi);
-
-    for (int i = 0; i < registered_rings; i++) {
-        if (!strncmp(addr_str, ring_adresses[i], 17)) {
-            LOG_INF("Ring found, trying to connect...");
-            if (bt_le_scan_stop()) {
+            err = bt_le_adv_stop();
+            if (err) {
+                printk("Advertising failed to stop (err %d)\n", err);
                 return;
             }
 
-            err = bt_conn_le_create(addr, &create_param, &conn_param, &bt_connection[conn_count]);
+            ww_data[2] = ww_value;
+            cw_data[2] = cw_value;
 
+            err = bt_le_adv_start(BT_LE_ADV_NCONN, ad, ARRAY_SIZE(ad), NULL, 0);
             if (err) {
-                LOG_ERR("Create connection to %s failed (%u)\n", log_strdup(addr_str), err);
-                start_scan();
+                printk("Advertising failed to start (err %d)\n", err);
+                return;
             }
         }
+        k_msleep(SLEEP_TIME_MS);
     }
-}
-
-// Handler after sucessful connection
-static void on_connect(struct bt_conn *conn, uint8_t err) {
-    char addr[BT_ADDR_LE_STR_LEN];
-
-    bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-    if (err) {
-        LOG_ERR("Failed to connect to %s (%u)", log_strdup(addr), err);
-
-        bt_conn_unref(bt_connection[conn_count]);
-        bt_connection[conn_count] = NULL;
-
-        start_scan();
-        return;
-    }
-
-    LOG_INF("Connected (%u): %s", conn_count, log_strdup(addr));
-
-    discover_params.uuid = &light_control_uuid.uuid;
-    discover_params.func = discover_func;
-    discover_params.start_handle = BT_ATT_FIRST_ATTTRIBUTE_HANDLE;
-    discover_params.end_handle = BT_ATT_LAST_ATTTRIBUTE_HANDLE;
-    discover_params.type = BT_GATT_DISCOVER_PRIMARY;
-
-    discover_completed = false;
-    err = bt_gatt_discover(bt_connection[conn_count], &discover_params);
-    if (err) {
-        LOG_ERR("Discover failed(err %d)", err);
-        return;
-    }
-}
-
-// Disconnect handler
-static void on_disconnect(struct bt_conn *conn, uint8_t reason) {
-    char addr[BT_ADDR_LE_STR_LEN];
-    bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-    LOG_ERR("Disconnected: %s (reason 0x%02x)\n", log_strdup(addr), reason);
-    sys_reboot(SYS_REBOOT_COLD);
-}
-
-// Discovery function
-static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *attr,
-                             struct bt_gatt_discover_params *params) {
-    int err;
-
-    if (!attr) {
-        LOG_INF("Discover complete");
-        (void)memset(params, 0, sizeof(*params));
-        return BT_GATT_ITER_STOP;
-    }
-    LOG_INF("[ATTRIBUTE] handle %u", attr->handle);
-
-    if (!bt_uuid_cmp(params->uuid, &light_control_uuid.uuid)) {
-        LOG_INF("Light Controller Service found!");
-        struct bt_gatt_service_val *service = attr->user_data;
-        discover_params.uuid = &ww_uuid.uuid;
-        discover_params.start_handle = attr->handle + 1;
-        discover_params.end_handle = service->end_handle;
-        discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
-
-        err = bt_gatt_discover(conn, &discover_params);
-        if (err) {
-            LOG_ERR("Discover failed (err %d)", err);
-        }
-    } else if (!bt_uuid_cmp(params->uuid, &ww_uuid.uuid)) {
-        struct bt_gatt_chrc *chrc = attr->user_data;
-        LOG_INF("WW Characteristic discovered at handle %u", attr->handle);
-
-        ww_handle[conn_count] = chrc->value_handle;
-        discover_params.uuid = &cw_uuid.uuid;
-        discover_params.start_handle = chrc->value_handle;
-        discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
-
-        err = bt_gatt_discover(conn, &discover_params);
-        if (err) {
-            LOG_ERR("Discover failed (err %d)", err);
-        }
-    } else if (!bt_uuid_cmp(params->uuid, &cw_uuid.uuid)) {
-        struct bt_gatt_chrc *chrc = attr->user_data;
-        LOG_INF("CW Characteristic discovered at handle %u", attr->handle);
-        cw_handle[conn_count] = chrc->value_handle;
-
-        conn_count++;
-        if (conn_count < registered_rings) {
-            start_scan();
-        }
-        return BT_GATT_ITER_STOP;
-    }
-    return BT_GATT_ITER_STOP;
 }
 
 // Brightnes logic: center of touchpad = lowest, outside of touchpad = highest
