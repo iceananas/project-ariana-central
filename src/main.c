@@ -28,6 +28,7 @@ void on_interrupt_received(const struct device *dev, struct gpio_callback *cb, u
 // LED Animation functions
 void fadeToBlack(int ledNo, double fadeValue);
 void meteorRain(struct led_rgb meteorColor, int meteorSize);
+void softblink();
 struct led_rgb meteor_color = RGB(0x70, 0x80, 0xa0);
 
 void animationLoop0() {
@@ -52,8 +53,8 @@ void animationLoop1() {
     }
 }
 
-K_THREAD_DEFINE(animation0, 2048, animationLoop0, NULL, NULL, NULL, 8, 0, 0);
-K_THREAD_DEFINE(animation1, 2048, animationLoop1, NULL, NULL, NULL, 9, 0, 0);
+// K_THREAD_DEFINE(animation0, 2048, animationLoop0, NULL, NULL, NULL, 8, 0, 0);
+// K_THREAD_DEFINE(animation1, 2048, animationLoop1, NULL, NULL, NULL, 9, 0, 0);
 
 // BLE advertising data
 uint8_t ww_data[] = {0x68, 0x68, 0x09};
@@ -115,11 +116,11 @@ void main(void) {
             ww_value = color[0] * ((float)brightness_value / 255);
             cw_value = color[1] * ((float)brightness_value / 255);
 
-            if (ww_value < 30) {
-                ww_value = 10;
+            if (ww_value < 80) {
+                ww_value = 0;
             }
-            if (cw_value < 30) {
-                cw_value = 5;
+            if (cw_value < 80) {
+                cw_value = 0;
             }
             LOG_DBG("Coordinates: x %d \t y %d", coordinates.x, coordinates.y);
             LOG_DBG("Brightness: %d", brightness_value);
@@ -129,6 +130,8 @@ void main(void) {
 
             ww_data[2] = ww_value;
             cw_data[2] = cw_value;
+
+            softblink();
         }
 
         err = bt_le_adv_update_data(ad, ARRAY_SIZE(ad), NULL, 0);
@@ -196,6 +199,34 @@ void fadeToBlack(int ledNo, double fadeValue) {
     oldColor.b = (b <= 10) ? 0 : (int)b - (int)ceil(((double)b * fadeValue / 256));
 
     memcpy(&pixels[ledNo], &oldColor, sizeof(struct led_rgb));
+}
+
+void softblink() {
+    struct led_rgb blink_color = RGB(0x00, 0x00, 0x00);
+    memset(&pixels, 0x00, sizeof(pixels));
+
+    for (int i = 0; i < 80; i++) {
+        blink_color.r = i*2;
+        blink_color.b = i*2;
+        blink_color.b = i*2;
+
+        for (int j = 0; j < STRIP_NUM_PIXELS; j++) {
+            memcpy(&pixels[j], &blink_color, sizeof(struct led_rgb));
+        }
+        led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+        k_msleep(1);
+    }
+
+    for (int i = 80; i > 0 ; i--) {
+        blink_color.r = i*2;
+        blink_color.b = i*2;
+        blink_color.b= i*2;
+        for (int j = 0; j < STRIP_NUM_PIXELS; j++) {
+            memcpy(&pixels[j], &blink_color, sizeof(struct led_rgb));
+        }
+        led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+        k_msleep(1);
+    }
 }
 
 // Draw meteor
